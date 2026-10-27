@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>能源运维 Agent · RAG + Function Calling</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+         background:#F4F5F7; color:#1F2328; font-size:14px; }
+  .app { display:flex; flex-direction:column; height:100vh; max-width:1280px; margin:0 auto; }
+  header { display:flex; align-items:center; gap:12px; padding:14px 20px;
+           background:#fff; border-bottom:1px solid #E3E5E8; }
+  .logo { width:26px; height:26px; border-radius:6px; background:#0F6E56;
+          color:#fff; display:flex; align-items:center; justify-content:center;
+          font-size:13px; font-weight:500; }
+  h1 { font-size:15px; margin:0; font-weight:500; }
+  .sub { font-size:12px; color:#6B7075; }
+  .spacer { flex:1; }
+  .badge { font-size:12px; padding:3px 9px; border-radius:20px;
+           background:#E1F5EE; color:#0F6E56; border:1px solid #9FE1CB; }
+  .badge.mock { background:#FAEEDA; color:#854F0B; border-color:#FAC775; }
+  main { flex:1; display:flex; gap:16px; padding:16px 20px; overflow:hidden; }
+  .chat-wrap { flex:1; display:flex; flex-direction:column; min-width:0; }
+  #chat { flex:1; overflow-y:auto; background:#fff; border:1px solid #E3E5E8;
+          border-radius:10px; padding:18px; }
+  .msg { margin-bottom:18px; }
+  .who { font-size:12px; color:#6B7075; margin-bottom:6px; }
+  .bubble { line-height:1.7; white-space:pre-wrap; word-break:break-word; }
+  .msg.user .bubble { background:#0F6E56; color:#fff; display:inline-block;
+                      padding:9px 13px; border-radius:10px; max-width:82%; }
+  .cites { margin-top:10px; border-top:1px dashed #E3E5E8; padding-top:9px; font-size:12px; }
+  .cites .t { color:#6B7075; margin-bottom:5px; }
+  .cite { background:#F4F5F7; border:1px solid #E3E5E8; border-radius:6px;
+          padding:6px 9px; margin-bottom:5px; color:#4A4F55; }
+  .cite b { color:#0F6E56; font-weight:500; }
+  aside { width:330px; display:flex; flex-direction:column; gap:10px; overflow-y:auto; }
+  .panel { background:#fff; border:1px solid #E3E5E8; border-radius:10px; padding:12px; }
+  .panel h3 { margin:0 0 8px; font-size:13px; font-weight:500; color:#1F2328; }
+  .kv { font-size:12px; color:#6B7075; margin-bottom:6px; }
+  .hit { border-left:3px solid #9FE1CB; padding:6px 9px; margin-bottom:7px;
+         background:#F7FBF9; font-size:12px; color:#4A4F55; line-height:1.6;
+         max-height:96px; overflow:hidden; }
+  .tool { font-size:12px; background:#E6F1FB; border:1px solid #85B7EB; color:#0C447C;
+          border-radius:6px; padding:6px 9px; margin-bottom:6px; }
+  .tool.res { background:#F4F5F7; border-color:#E3E5E8; color:#4A4F55;
+              white-space:pre-wrap; word-break:break-all; }
+  .empty { color:#9AA0A6; font-size:12px; }
+  footer { padding:12px 20px 18px; display:flex; gap:8px; align-items:flex-end; }
+  textarea { flex:1; height:52px; resize:none; padding:11px 13px; font:inherit;
+             border:1px solid #E3E5E8; border-radius:9px; outline:none; background:#fff; }
+  textarea:focus { border-color:#0F6E56; }
+  .btn { padding:11px 18px; border:none; border-radius:9px; background:#0F6E56;
+         color:#fff; font:inherit; cursor:pointer; }
+  .btn:hover { background:#0C5A47; }
+  .btn.ghost { background:#fff; color:#4A4F55; border:1px solid #E3E5E8; }
+  .sugs { display:flex; gap:7px; padding:0 20px 10px; flex-wrap:wrap; }
+  .sug { font-size:12px; padding:5px 11px; border-radius:20px; border:1px solid #E3E5E8;
+         background:#fff; color:#4A4F55; cursor:pointer; }
+  .sug:hover { border-color:#0F6E56; color:#0F6E56; }
+  .thinking { color:#9AA0A6; font-size:12px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="logo">AI</div>
+    <div>
+      <h1>能源行业智能运维 Agent</h1>
+      <div class="sub">RAG 检索 + Function Calling 工具调用 + 流式输出</div>
+    </div>
+    <div class="spacer"></div>
+    <span class="badge" id="mode">加载中</span>
+    <button class="btn ghost" id="btnReset">清空对话</button>
+  </header>
+
+  <div class="sugs">
+    <span class="sug" data-q="逆变器报绝缘阻抗故障怎么处理？">逆变器报绝缘阻抗故障怎么处理？</span>
+    <span class="sug" data-q="光伏电站发电量偏低怎么排查？">发电量偏低怎么排查？</span>
+    <span class="sug" data-q="查询 INV-02 当前状态">查询 INV-02 当前状态</span>
+    <span class="sug" data-q="现在有哪些告警？">现在有哪些告警？</span>
+    <span class="sug" data-q="储能电池舱温差过大怎么办？">储能舱温差过大怎么办？</span>
+    <span class="sug" data-q="虚拟电厂的响应准确率要求是多少？">虚拟电厂响应准确率要求？</span>
+  </div>
+
+  <main>
+    <div class="chat-wrap">
+      <div id="chat"></div>
+    </div>
+    <aside>
+      <div class="panel">
+        <h3>检索结果</h3>
+        <div class="kv" id="rinfo">等待提问</div>
+        <div id="hits"></div>
+      </div>
+      <div class="panel">
+        <h3>工具调用</h3>
+        <div id="tools"><div class="empty">本次未调用工具</div></div>
+      </div>
+    </aside>
+  </main>
+
+  <footer>
+    <textarea id="input" placeholder="输入问题，Enter 发送 / Shift+Enter 换行"></textarea>
+    <button class="btn" id="btnSend">发送</button>
+  </footer>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const chat = $('#chat');
+
+fetch('/api/status').then(r => r.json()).then(d => {
+  const b = $('#mode');
+  b.textContent = d.llm ? ('模型：' + d.model) : 'Mock 模式（未配置 Key）';
+  if (!d.llm) b.classList.add('mock');
+});
+
+function addMsg(who, text) {
+  const el = document.createElement('div');
+  el.className = 'msg ' + who;
+  el.innerHTML = '<div class="who">' + (who === 'user' ? '我' : 'Agent') + '</div>' +
+                 '<div class="bubble"></div>';
+  el.querySelector('.bubble').textContent = text;
+  chat.appendChild(el);
+  chat.scrollTop = chat.scrollHeight;
+  return el;
+}
+
+function renderHits(ev) {
+  const box = $('#hits'), info = $('#rinfo');
+  box.innerHTML = '';
+  if (!ev.hits || !ev.hits.length) {
+    info.textContent = '未召回任何片段';
+    box.innerHTML = '<div class="empty">无</div>';
+    return;
+  }
+  const ok = ev.relevant;
+  info.textContent = '模式 ' + ev.mode + ' · 召回 ' + ev.hits.length +
+                     ' 段 · 相关性判定：' + (ok ? '通过' : '未通过（拒答保护）');
+  ev.hits.forEach((h, i) => {
+    const d = document.createElement('div');
+    d.className = 'hit';
+    d.textContent = '[' + (i + 1) + '] ' + h.doc + ' · score ' + h.score +
+                    '（bm25 ' + h.bm25 + (h.vec !== null ? ' / vec ' + h.vec : '') + '）\n' + h.text;
+    box.appendChild(d);
+  });
+}
+
+function addTool(cls, text) {
+  const box = $('#tools');
+  if (box.querySelector('.empty')) box.innerHTML = '';
+  const d = document.createElement('div');
+  d.className = 'tool' + (cls === 'res' ? ' res' : '');
+  d.textContent = text;
+  box.appendChild(d);
+}
+
+async function send(text) {
+  if (!text.trim()) return;
+  addMsg('user', text);
+  $('#input').value = '';
+  const el = addMsg('bot', '');
+  const bubble = el.querySelector('.bubble');
+  const thinking = document.createElement('span');
+  thinking.className = 'thinking';
+  thinking.textContent = '检索中…';
+  bubble.appendChild(thinking);
+  chat.scrollTop = chat.scrollHeight;
+
+  const res = await fetch('/api/chat', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({message: text})
+  });
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = '', started = false;
+
+  while (true) {
+    const {done, value} = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, {stream: true});
+    const lines = buf.split('\n');
+    buf = lines.pop();
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      let ev; try { ev = JSON.parse(line); } catch (e) { continue; }
+      if (ev.type === 'retrieval') { renderHits(ev); }
+      else if (ev.type === 'tool_call') { addTool('call', '→ 调用 ' + ev.name + '(' + ev.args + ')'); }
+      else if (ev.type === 'tool_result') { addTool('res', '← ' + ev.result); }
+      else if (ev.type === 'delta') {
+        if (!started) { thinking.remove(); started = true; }
+        bubble.textContent += ev.text;
+        chat.scrollTop = chat.scrollHeight;
+      }
+      else if (ev.type === 'citations' && ev.items && ev.items.length) {
+        const c = document.createElement('div');
+        c.className = 'cites';
+        c.innerHTML = '<div class="t">引用来源</div>';
+        ev.items.forEach((h, i) => {
+          const d = document.createElement('div');
+          d.className = 'cite';
+          d.textContent = '[' + (i + 1) + '] ' + h.doc + '（相关度 ' + h.score + '）' +
+                          '\n' + h.text + '…';
+          c.appendChild(d);
+        });
+        el.appendChild(c);
+      }
+      else if (ev.type === 'error') {
+        if (!started) { thinking.remove(); started = true; }
+        bubble.textContent += '【出错】' + ev.message;
+      }
+    }
+  }
+  if (!started) thinking.remove();
+  chat.scrollTop = chat.scrollHeight;
+}
+
+$('#btnSend').onclick = () => send($('#input').value);
+$('#input').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send($('#input').value); }
+});
+document.querySelectorAll('.sug').forEach(s => {
+  s.onclick = () => { $('#input').value = s.dataset.q; $('#input').focus(); };
+});
+$('#btnReset').onclick = async () => {
+  await fetch('/api/reset', {method: 'POST'});
+  chat.innerHTML = '';
+  $('#hits').innerHTML = '';
+  $('#tools').innerHTML = '<div class="empty">本次未调用工具</div>';
+  $('#rinfo').textContent = '等待提问';
+};
+$('#input').focus();
+</script>
+</body>
+</html>
